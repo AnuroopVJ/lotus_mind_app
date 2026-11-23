@@ -1,5 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
 
 const NVIDIA_URL =
   process.env.NVIDIA_BASE_URL ??
@@ -24,7 +23,8 @@ Rules you always follow:
 - Never diagnose any mental-health condition, never claim certainty about how the student feels, and never act as a therapist.
 - If the student raises a personal or mental-health worry, respond kindly in one or two sentences and point them to the Help section of the app and a trusted adult.
 - Reply in the language the student uses (English, Hindi or Hinglish).
-- Keep answers focused and not longer than needed.`;
+- Keep answers focused and not longer than needed.
+- When helpful for explaining concepts, cycles, or relationships, include small ASCII diagrams or Mermaid.js flowchart/graph blocks (\`\`\`mermaid ... \`\`\`).`;
 
 const REFLECTION_PROMPT =
   `You help a high-school student reflect on ONE journal entry they chose to share with you.
