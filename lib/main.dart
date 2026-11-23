@@ -1,29 +1,12 @@
-// lib/main.dart
-// pubspec.yaml: add
-//   http: ^1.2.0
-//   supabase_flutter: ^2.8.0
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'reflections.dart';
 
+const kVercelApiUrl = 'https://lotusmind.vercel.app/api/chat';
 
-// The publishable key is safe to ship in the app. Never put a secret key (sb_secret_...) here.
-const kSupabaseUrl = 'https://nbjtrbzrdkrkloiocapo.supabase.co';
-const kSupabasePublishableKey = 'sb_publishable_Z-IJKTFj_X8_R4U17lLeDQ_tAV2FIMr';
-const kFunctionUrl = '$kSupabaseUrl/functions/v1/invidia-chat';
-
-SupabaseClient get supabase => Supabase.instance.client;
-
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await Supabase.initialize(
-    url: kSupabaseUrl,
-    publishableKey: kSupabasePublishableKey,
-  );
   runApp(const ChatApp());
 }
 
@@ -40,23 +23,7 @@ class ChatApp extends StatelessWidget {
         colorSchemeSeed: Colors.teal,
         brightness: Brightness.dark,
       ),
-      home: const AuthGate(),
-    );
-  }
-}
-
-/// Shows the login page when signed out, the chat when signed in.
-class AuthGate extends StatelessWidget {
-  const AuthGate({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<AuthState>(
-      stream: supabase.auth.onAuthStateChange,
-      builder: (context, snapshot) {
-        final session = snapshot.data?.session ?? supabase.auth.currentSession;
-        return session == null ? const LoginPage() : const HomeShell();
-      },
+      home: const HomeShell(),
     );
   }
 }
@@ -100,222 +67,6 @@ class _HomeShellState extends State<HomeShell> {
 }
 
 // ---------------------------------------------------------------------------
-// Login / sign-up
-// ---------------------------------------------------------------------------
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
-
-  @override
-  State<LoginPage> createState() => _LoginPageState();
-}
-
-class _LoginPageState extends State<LoginPage> {
-  final _formKey = GlobalKey<FormState>();
-  final _name = TextEditingController();
-  final _email = TextEditingController();
-  final _password = TextEditingController();
-
-  bool _isSignUp = false;
-  bool _loading = false;
-  bool _hidePassword = true;
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _email.dispose();
-    _password.dispose();
-    super.dispose();
-  }
-
-  void _snack(String text) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _loading = true);
-    try {
-      if (_isSignUp) {
-        final res = await supabase.auth.signUp(
-          email: _email.text.trim(),
-          password: _password.text,
-          data: {'display_name': _name.text.trim()},
-        );
-        // With email confirmation on (the default) there is no session yet.
-        if (res.session == null) {
-          _snack('Check your email to confirm your account, then sign in.');
-          if (mounted) setState(() => _isSignUp = false);
-        }
-      } else {
-        await supabase.auth.signInWithPassword(
-          email: _email.text.trim(),
-          password: _password.text,
-        );
-        // AuthGate swaps to ChatPage automatically.
-      }
-    } on AuthException catch (e) {
-      _snack(e.message);
-    } catch (_) {
-      _snack('Something went wrong. Check your connection and try again.');
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _forgotPassword() async {
-    final email = _email.text.trim();
-    if (!email.contains('@')) {
-      _snack('Enter your email above first.');
-      return;
-    }
-    try {
-      await supabase.auth.resetPasswordForEmail(email);
-      _snack('If that email has an account, a reset link is on its way.');
-    } on AuthException catch (e) {
-      _snack(e.message);
-    } catch (_) {
-      _snack('Could not send the reset email. Try again.');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Icon(
-                      Icons.spa_outlined,
-                      size: 56,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Lotusmind',
-                      textAlign: TextAlign.center,
-                      style: textTheme.headlineMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _isSignUp ? 'Create your account' : 'Welcome back',
-                      textAlign: TextAlign.center,
-                      style: textTheme.bodyLarge,
-                    ),
-                    const SizedBox(height: 24),
-                    if (_isSignUp) ...[
-                      TextFormField(
-                        controller: _name,
-                        textCapitalization: TextCapitalization.words,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          labelText: 'Name',
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (v) => (v == null || v.trim().isEmpty)
-                            ? 'Enter your name'
-                            : null,
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    TextFormField(
-                      controller: _email,
-                      keyboardType: TextInputType.emailAddress,
-                      autofillHints: const [AutofillHints.email],
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (v) {
-                        final s = v?.trim() ?? '';
-                        return (s.contains('@') && s.contains('.'))
-                            ? null
-                            : 'Enter a valid email';
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _password,
-                      obscureText: _hidePassword,
-                      autofillHints: [
-                        _isSignUp
-                            ? AutofillHints.newPassword
-                            : AutofillHints.password,
-                      ],
-                      textInputAction: TextInputAction.done,
-                      onFieldSubmitted: (_) => _loading ? null : _submit(),
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        border: const OutlineInputBorder(),
-                        suffixIcon: IconButton(
-                          tooltip: _hidePassword ? 'Show' : 'Hide',
-                          icon: Icon(
-                            _hidePassword
-                                ? Icons.visibility_outlined
-                                : Icons.visibility_off_outlined,
-                          ),
-                          onPressed: () =>
-                              setState(() => _hidePassword = !_hidePassword),
-                        ),
-                      ),
-                      validator: (v) => (v == null || v.length < 8)
-                          ? 'Use at least 8 characters'
-                          : null,
-                    ),
-                    if (!_isSignUp)
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: _loading ? null : _forgotPassword,
-                          child: const Text('Forgot password?'),
-                        ),
-                      ),
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      onPressed: _loading ? null : _submit,
-                      child: _loading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(_isSignUp ? 'Create account' : 'Sign in'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: _loading
-                          ? null
-                          : () => setState(() => _isSignUp = !_isSignUp),
-                      child: Text(
-                        _isSignUp
-                            ? 'Already have an account? Sign in'
-                            : 'New here? Create an account',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Chat
 // ---------------------------------------------------------------------------
 class _Msg {
@@ -344,14 +95,6 @@ class _ChatPageState extends State<ChatPage> {
   double _temperature = 0.4;
   bool _stream = true;
   bool _sending = false;
-  String? _displayName;
-  String? _sessionId; // null until the first message of a chat is saved
-
-  @override
-  void initState() {
-    super.initState();
-    _loadProfile();
-  }
 
   @override
   void dispose() {
@@ -360,29 +103,6 @@ class _ChatPageState extends State<ChatPage> {
     _custom.dispose();
     _scroll.dispose();
     super.dispose();
-  }
-
-  /// Reads this user's row from the `profiles` table (RLS: own row only).
-  Future<void> _loadProfile() async {
-    try {
-      final uid = supabase.auth.currentUser?.id;
-      if (uid == null) return;
-      final row = await supabase
-          .from('profiles')
-          .select('display_name, custom_instructions, default_mode')
-          .eq('id', uid)
-          .maybeSingle();
-      if (mounted && row != null) {
-        setState(() {
-          _displayName = row['display_name'] as String?;
-          _custom.text = (row['custom_instructions'] as String?) ?? '';
-          final m = row['default_mode'] as String?;
-          if (m == 'normal' || m == 'simpler' || m == 'deeper') _mode = m!;
-        });
-      }
-    } catch (_) {
-      // Greeting is optional; ignore failures.
-    }
   }
 
   void _scrollToEnd() {
@@ -409,7 +129,6 @@ class _ChatPageState extends State<ChatPage> {
     });
     _scrollToEnd();
 
-    // Last 10 turns, skipping crisis replies so they are not fed back to the model.
     final history = _messages
         .where((m) => !m.isCrisis && m.content.isNotEmpty)
         .toList();
@@ -429,19 +148,13 @@ class _ChatPageState extends State<ChatPage> {
 
     final reply = _Msg('assistant', '');
     try {
-      // The signed-in user's JWT; the function rejects anything else.
-      final token = supabase.auth.currentSession?.accessToken;
-      if (token == null) throw Exception('Please sign in again.');
-
-      final req = http.Request('POST', Uri.parse(kFunctionUrl))
+      final req = http.Request('POST', Uri.parse(kVercelApiUrl))
         ..headers.addAll({
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-          'apikey': kSupabasePublishableKey,
         })
         ..body = body;
 
-      final res = await _client.send(req).timeout(const Duration(seconds: 30));
+      final res = await _client.send(req).timeout(const Duration(seconds: 45));
 
       if (res.statusCode != 200) {
         final err = await res.stream.bytesToString();
@@ -467,7 +180,7 @@ class _ChatPageState extends State<ChatPage> {
               _scrollToEnd();
             }
           } catch (_) {
-            // ignore keep-alive or partial lines
+            // ignore
           }
         }
         if (reply.content.isEmpty) {
@@ -489,8 +202,6 @@ class _ChatPageState extends State<ChatPage> {
           setState(() => _messages.add(reply));
         }
       }
-      // Save the turn (user message + reply) without blocking the UI.
-      _persist(text, _messages.last);
     } catch (e) {
       _snack(e.toString().replaceFirst('Exception: ', ''));
     } finally {
@@ -499,178 +210,28 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  /// Saves one finished turn. Failures are ignored so chat never breaks.
-  Future<void> _persist(String userText, _Msg last) async {
-    try {
-      final uid = supabase.auth.currentUser?.id;
-      if (uid == null) return;
-      if (_sessionId == null) {
-        final row = await supabase
-            .from('chat_sessions')
-            .insert({
-              'user_id': uid,
-              'title': userText.length > 60
-                  ? userText.substring(0, 60)
-                  : userText,
-            })
-            .select('id')
-            .single();
-        _sessionId = row['id'] as String;
-      }
-      await supabase.from('chat_messages').insert([
-        {
-          'session_id': _sessionId,
-          'user_id': uid,
-          'role': 'user',
-          'content': userText,
-        },
-        {
-          'session_id': _sessionId,
-          'user_id': uid,
-          'role': 'assistant',
-          'content': last.content,
-          'model': last.model,
-          'is_crisis': last.isCrisis,
-        },
-      ]);
-    } catch (_) {
-      // History is a convenience; ignore save failures.
-    }
-  }
-
   void _newChat() => setState(() {
     _messages.clear();
-    _sessionId = null;
   });
-
-  Future<void> _openHistory() async {
-    try {
-      final rows = await supabase
-          .from('chat_sessions')
-          .select('id, title, created_at')
-          .order('created_at', ascending: false)
-          .limit(30);
-      if (!mounted) return;
-      final picked = await showModalBottomSheet<String>(
-        context: context,
-        showDragHandle: true,
-        builder: (ctx) => rows.isEmpty
-            ? const SizedBox(
-                height: 160,
-                child: Center(child: Text('No saved chats yet.')),
-              )
-            : ListView(
-                children: [
-                  for (final r in rows)
-                    ListTile(
-                      leading: const Icon(Icons.chat_bubble_outline),
-                      title: Text(
-                        (r['title'] as String?) ?? 'Chat',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        DateTime.parse(r['created_at'] as String)
-                            .toLocal()
-                            .toString()
-                            .substring(0, 16),
-                      ),
-                      onTap: () => Navigator.pop(ctx, r['id'] as String),
-                    ),
-                ],
-              ),
-      );
-      if (picked != null) await _loadSession(picked);
-    } catch (_) {
-      _snack('Could not load your chats.');
-    }
-  }
-
-  Future<void> _loadSession(String id) async {
-    try {
-      final rows = await supabase
-          .from('chat_messages')
-          .select('role, content, model, is_crisis')
-          .eq('session_id', id)
-          .order('id');
-      if (!mounted) return;
-      setState(() {
-        _messages
-          ..clear()
-          ..addAll([
-            for (final r in rows)
-              _Msg(
-                r['role'] as String,
-                r['content'] as String,
-                isCrisis: r['is_crisis'] == true,
-              )..model = r['model'] as String?,
-          ]);
-        _sessionId = id;
-      });
-      _scrollToEnd();
-    } catch (_) {
-      _snack('Could not open that chat.');
-    }
-  }
-
-  /// Stores the custom prompt + mode on the user's profile row.
-  Future<void> _saveDefaults() async {
-    try {
-      final uid = supabase.auth.currentUser?.id;
-      if (uid == null) return;
-      await supabase
-          .from('profiles')
-          .update({
-            'custom_instructions': _custom.text.trim(),
-            'default_mode': _mode,
-          })
-          .eq('id', uid);
-      _snack('Saved as your default.');
-    } catch (_) {
-      _snack('Could not save. Try again.');
-    }
-  }
 
   String _friendlyError(int status, String body) {
     if (status == 429) return 'Too many requests. Wait a moment and retry.';
-    if (status == 401 || status == 403) {
-      return 'Session expired. Please sign out and sign in again.';
-    }
+    if (status == 502) return 'AI service temporarily unavailable. Try again.';
     return 'Something went wrong ($status). Try again.';
-  }
-
-  Future<void> _signOut() async {
-    try {
-      await supabase.auth.signOut();
-      // AuthGate returns to LoginPage; this page (and the chat) is disposed.
-    } catch (_) {
-      _snack('Could not sign out. Try again.');
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final hasName = _displayName != null && _displayName!.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(hasName ? 'Hi, $_displayName' : 'Study Assistant'),
+        title: const Text('Study Assistant'),
         actions: [
-          IconButton(
-            tooltip: 'Chat history',
-            icon: const Icon(Icons.history),
-            onPressed: _sending ? null : _openHistory,
-          ),
           IconButton(
             tooltip: 'New chat',
             icon: const Icon(Icons.add_comment_outlined),
             onPressed: _sending ? null : _newChat,
-          ),
-          IconButton(
-            tooltip: 'Sign out',
-            icon: const Icon(Icons.logout),
-            onPressed: _sending ? null : _signOut,
           ),
         ],
       ),
@@ -718,7 +279,7 @@ class _ChatPageState extends State<ChatPage> {
           maxLines: 4,
           decoration: const InputDecoration(
             labelText: 'Your instructions (tone, format, length)',
-            hintText: 'e.g. Use short bullet points and Hinglish examples',
+            hintText: 'e.g. Use short bullet points and examples',
             border: OutlineInputBorder(),
           ),
         ),
@@ -740,14 +301,6 @@ class _ChatPageState extends State<ChatPage> {
           title: const Text('Stream replies'),
           value: _stream,
           onChanged: (v) => setState(() => _stream = v),
-        ),
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton.icon(
-            onPressed: _saveDefaults,
-            icon: const Icon(Icons.save_outlined),
-            label: const Text('Save as my default'),
-          ),
         ),
       ],
     );
