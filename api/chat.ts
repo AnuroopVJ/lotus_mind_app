@@ -5,7 +5,7 @@ const NVIDIA_URL =
   process.env.NVIDIA_BASE_URL ??
   'https://integrate.api.nvidia.com/v1/chat/completions';
 const NVIDIA_KEY = process.env.NVIDIA_API_KEY;
-const DEFAULT_MODEL = process.env.NVIDIA_MODEL ?? 'meta/llama-3.1-8b-instruct';
+const DEFAULT_MODEL = process.env.NVIDIA_MODEL ?? 'minimaxai/minimax-m3.1-flash';
 const ALLOWED_MODELS = (process.env.ALLOWED_MODELS ?? DEFAULT_MODEL)
   .split(',')
   .map((s) => s.trim())
