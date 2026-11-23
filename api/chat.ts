@@ -75,71 +75,77 @@ function clamp(n: unknown, min: number, max: number, fallback: number): number {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS Headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-client-info, apikey');
-  res.setHeader('Access-Control-Expose-Headers', 'X-Provider, X-Model');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'method_not_allowed' });
-  }
-
-  if (!NVIDIA_KEY) {
-    return res.status(500).json({ error: 'server_not_configured' });
-  }
-
-  const authHeader = req.headers['authorization'] ?? '';
-  if (authHeader && typeof authHeader === 'string') {
-    const supa = createClient(
-      process.env.SUPABASE_URL ?? '',
-      process.env.SUPABASE_ANON_KEY ?? '',
-      { global: { headers: { Authorization: authHeader } } },
-    );
-    const { data, error } = await supa.auth.getUser();
-    if (error || !data?.user) {
-      return res.status(401).json({ error: 'unauthenticated' });
-    }
-  }
-
-  const body = req.body;
-  const messages = body?.messages;
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return res.status(400).json({ error: 'invalid_messages' });
-  }
-
-  const lastUser = messages[messages.length - 1].content;
-  if (looksLikeCrisis(lastUser)) {
-    return res.status(200).json({ crisis: true, message: CRISIS_MESSAGE });
-  }
-
-  const mode = typeof body.mode === 'string' && body.mode in MODE_PROMPTS ? body.mode : 'normal';
-  const custom = typeof body.custom_instructions === 'string' ? body.custom_instructions.trim().slice(0, MAX_CUSTOM_CHARS) : '';
-  const model = typeof body.model === 'string' && ALLOWED_MODELS.includes(body.model) ? body.model : DEFAULT_MODEL;
-  const temperature = clamp(body.temperature, 0, 1, 0.4);
-  const maxTokens = clamp(body.max_tokens, 64, 1024, 600);
-  const stream = body.stream === true;
-  const purpose = body.purpose === 'reflection' ? 'reflection' : 'chat';
-
-  const payload = {
-    model,
-    messages: [
-      {
-        role: 'system',
-        content: purpose === 'reflection' ? REFLECTION_PROMPT : buildSystemPrompt(mode, custom),
-      },
-      ...messages,
-    ],
-    temperature,
-    max_tokens: maxTokens,
-    stream,
-  };
-
   try {
+    // CORS Headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-client-info, apikey');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Provider, X-Model');
+
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'method_not_allowed' });
+      return;
+    }
+
+    if (!NVIDIA_KEY) {
+      res.status(500).json({ error: 'server_not_configured' });
+      return;
+    }
+
+    const authHeader = req.headers['authorization'] ?? '';
+    if (authHeader && typeof authHeader === 'string') {
+      const supa = createClient(
+        process.env.SUPABASE_URL ?? '',
+        process.env.SUPABASE_ANON_KEY ?? '',
+        { global: { headers: { Authorization: authHeader } } },
+      );
+      const { data, error } = await supa.auth.getUser();
+      if (error || !data?.user) {
+        res.status(401).json({ error: 'unauthenticated' });
+        return;
+      }
+    }
+
+    const body = req.body;
+    const messages = body?.messages;
+    if (!Array.isArray(messages) || messages.length === 0) {
+      res.status(400).json({ error: 'invalid_messages' });
+      return;
+    }
+
+    const lastUser = messages[messages.length - 1].content;
+    if (looksLikeCrisis(lastUser)) {
+      res.status(200).json({ crisis: true, message: CRISIS_MESSAGE });
+      return;
+    }
+
+    const mode = typeof body.mode === 'string' && body.mode in MODE_PROMPTS ? body.mode : 'normal';
+    const custom = typeof body.custom_instructions === 'string' ? body.custom_instructions.trim().slice(0, MAX_CUSTOM_CHARS) : '';
+    const model = typeof body.model === 'string' && ALLOWED_MODELS.includes(body.model) ? body.model : DEFAULT_MODEL;
+    const temperature = clamp(body.temperature, 0, 1, 0.4);
+    const maxTokens = clamp(body.max_tokens, 64, 1024, 600);
+    const stream = body.stream === true;
+    const purpose = body.purpose === 'reflection' ? 'reflection' : 'chat';
+
+    const payload = {
+      model,
+      messages: [
+        {
+          role: 'system',
+          content: purpose === 'reflection' ? REFLECTION_PROMPT : buildSystemPrompt(mode, custom),
+        },
+        ...messages,
+      ],
+      temperature,
+      max_tokens: maxTokens,
+      stream,
+    };
+
     const upstream = await fetch(NVIDIA_URL, {
       method: 'POST',
       headers: {
@@ -151,7 +157,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     if (!upstream.ok) {
-      return res.status(upstream.status === 429 ? 429 : 502).json({ error: 'provider_error' });
+      res.status(upstream.status === 429 ? 429 : 502).json({ error: 'provider_error' });
+      return;
     }
 
     res.setHeader('X-Provider', 'nvidia');
@@ -167,13 +174,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (done) break;
         res.write(decoder.decode(value, { stream: true }));
       }
-      return res.end();
+      res.end();
+      return;
     }
 
     const data = await upstream.json();
     const reply: string = data?.choices?.[0]?.message?.content ?? '';
-    return res.status(200).json({ reply, provider: 'nvidia', model });
-  } catch (_) {
-    return res.status(502).json({ error: 'provider_unavailable' });
+    res.status(200).json({ reply, provider: 'nvidia', model });
+  } catch (err: any) {
+    console.error('Function invocation error:', err);
+    res.status(500).json({ error: 'internal_error', message: err?.message ?? String(err) });
   }
 }
