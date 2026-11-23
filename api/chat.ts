@@ -112,8 +112,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const body = req.body;
-    const messages = body?.messages;
-    if (!Array.isArray(messages) || messages.length === 0) {
+    const raw = body?.messages;
+    if (!Array.isArray(raw) || raw.length === 0) {
+      res.status(400).json({ error: 'invalid_messages' });
+      return;
+    }
+
+    const messages = raw
+      .filter(
+        (m: any) =>
+          m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string',
+      )
+      .slice(-MAX_MESSAGES)
+      .map((m: any) => ({ role: m.role, content: m.content.slice(0, MAX_MESSAGE_CHARS) }));
+
+    if (messages.length === 0) {
       res.status(400).json({ error: 'invalid_messages' });
       return;
     }
@@ -157,6 +170,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     if (!upstream.ok) {
+      const detail = await upstream.text().catch(() => '');
+      console.error('NVIDIA upstream error', upstream.status, model, detail.slice(0, 500));
       res.status(upstream.status === 429 ? 429 : 502).json({ error: 'provider_error' });
       return;
     }
@@ -181,8 +196,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const data = await upstream.json();
     const reply: string = data?.choices?.[0]?.message?.content ?? '';
     res.status(200).json({ reply, provider: 'nvidia', model });
-  } catch (err: any) {
-    console.error('Function invocation error:', err);
-    res.status(500).json({ error: 'internal_error', message: err?.message ?? String(err) });
+  } catch (err) {
+    console.error('NVIDIA fetch failed', err);
+    res.status(502).json({ error: 'provider_unavailable' });
   }
 }
